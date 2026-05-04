@@ -8,7 +8,7 @@ The Crafts & Co 3128 (sold at Action stores in the Netherlands/Europe) is a rebr
 
 **No installation needed.** Just open this in Chrome, Edge, or Opera:
 
-**https://chiaravanderlee.github.io/crafts-and-co-printer/**
+**https://ChiaraCannolee.github.io/thermal-pocket-printer-basic/**
 
 (Requires Web Bluetooth support – Chrome/Edge/Opera on desktop, not Firefox/Safari)
 
@@ -112,7 +112,7 @@ See [PROTOCOL.md](PROTOCOL.md) for complete command reference.
 This tool is confirmed to work with the Crafts & Co 3128 (DP-L1S). It will likely work with other printers from the LuckPrinter family that use the same SDK and `BaseNormalDevice` class; including various DP-/DP-series, LuckP-/LuckP-series, and MiniPocketPrinter models. The print width may differ (check with `print.py info`).
 
 **Other printer classes use different enable/stop commands:**
-For the Fichero D11s and other AiYin-based label printers, see [fichero-printer](https://github.com/0xMH/fichero-printer) by 0xMH, who reverse-engineered the same SDK for a different device class. For Dutch information regarding this reverse-engineered project, see [this Reddit post](https://www.reddit.com/r/nederlands/comments/1rcuuay/reverseengineerde_het_bluetoothprotocol_van/)
+For the Fichero D11s and other AiYin-based label printers, see [fichero-printer](https://github.com/0xMH/fichero-printer) by 0xMH, who reverse-engineered the same SDK for a different device class.
 
 ## Background
 
