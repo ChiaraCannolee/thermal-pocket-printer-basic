@@ -1,57 +1,61 @@
-# crafts-and-co-thermal-pocket-printer-basic
+# thermal-pocket-printer-basic
 
-Print to the **Crafts & Co 3128** thermal pocket printer directly from your computer via Bluetooth, no app required.
+Print to a **DP-L1S** thermal pocket printer directly from your computer over Bluetooth, no app required.
 
-The Crafts & Co 3128 (sold at Action stores in the Netherlands/Europe) is a rebranded **DP-L1S** by Xiamen Print Future Technology, using the **LuckPrinter SDK**. Its companion app ("Luck Jingle") requires excessive permissions and a persistent internet connection for a device that prints over Bluetooth. This project removes the app from the equation.
+The DP-L1S is a small thermal pocket printer made by Xiamen Print Future Technology, sold under various brand names (Crafts & Co 3128 in NL/EU via Craft & Co, Action stores, and others). Its companion app, "Luck Jingle", demands location permissions, a persistent internet connection, and a long list of other things that have no business being on a printer that just receives an image over Bluetooth from 30 cm away.
 
-## Quick start: Open the web app
+So I decompiled the Android APK with JADX, reverse-engineered the BLE protocol, and built a Python CLI and a web app that talk to the printer directly. No app, no account, no cloud.
 
-**No installation needed.** Just open this in Chrome, Edge, or Opera:
+## Quick start
 
+**Web app (no install, just open in Chrome/Edge/Opera):**
 **https://ChiaraCannolee.github.io/thermal-pocket-printer-basic/**
 
-(Requires Web Bluetooth support – Chrome/Edge/Opera on desktop, not Firefox/Safari)
+Web Bluetooth is required, so Firefox and Safari are out. Works on macOS and Linux. Windows is waiting on better Web Bluetooth support.
 
-## What this does
-
-- Connects to the printer over BLE from macOS or Linux
-- Prints images, text, and test patterns
-- Supports label/sticker paper, density control, and Floyd-Steinberg dithering for photos
-- Provides a full command reference for the printer's BLE protocol
-
-## Python CLI (for automation)
-If you prefer command line or want to batch-process prints:
+**Python CLI (for automation and batch jobs):**
 
 ```bash
-# Install dependencies
 pip install bleak Pillow
 
-# Print a test pattern
-python3 print.py test
-
-# Print an image
-python3 print.py image photo.png
-
-# Print with dithering (for photos/gradients)
-python3 print.py image photo.png --dither
-
-# Print text
+python3 print.py test                         # test pattern
+python3 print.py image photo.png --dither     # photo with Floyd-Steinberg
 python3 print.py text "Hello World"
-
-# Print on sticker paper (label mode)
-python3 print.py text "My Label" --label
-
-# Check printer battery and status
-python3 print.py info
+python3 print.py text "My Label" --label      # sticker/label paper mode
+python3 print.py info                         # battery, firmware, model
 ```
 
-## Web GUI vs CLI
+## Features
 
-The **web GUI** (`index.html`) is the easiest way to get started — no installation needed, just open in Chrome.
+- Print images, text, and test patterns
+- Live preview of what comes out of the printer
+- Three density levels
+- Floyd-Steinberg dithering for photos and gradients
+- Invert mode (swap black and white)
+- Label mode for sticker paper with gap detection
+- Battery indicator via BLE notifications
 
-The **Python CLI** (`print.py`) is for automation, batch jobs, and integrations. Requires `pip install bleak Pillow`.
+## How it works
 
-## Usage
+The printer runs on the LuckPrinter SDK, which is used by 159+ printer models. The BLE protocol is an ESC/POS variant. The basic flow:
+
+1. **Connect** to BLE service `ff00`, write to characteristic `ff02`, listen for notifications on `ff01`
+2. **Enable printer**: send `10 FF F1 03` (Lujiang-specific command)
+3. **Wake up**: send 12 null bytes
+4. **Set density** (optional): `10 FF 10 00 [0|1|2]` for light/normal/dark
+5. **Send bitmap**: GS v 0 raster image (384 pixels wide, 1-bit, MSB-first)
+6. **Feed paper**: `1B 4A 50` (feed 80 dots)
+7. **Stop job**: `10 FF F1 45` (wait for response)
+
+For label/sticker paper with gap detection, replace step 6 with `1D 0C` (position to next label), and use `1F 11 51` before print and `1F 11 50` after for position adjustment.
+
+The web version uses 100-byte chunks with 50ms delays because of Web Bluetooth's MTU limits. The Python CLI uses 512-byte chunks with 10ms delays, which is significantly faster.
+
+The printer broadcasts as `C&Co 3128_BLE` and does not advertise its service UUIDs, so scanning by service filter alone won't find it.
+
+See [PROTOCOL.md](PROTOCOL.md) for the complete command reference, including device info queries, status bitfield, and label/tattoo print sequences.
+
+## CLI usage
 
 ```
 python3 print.py <command> [options]
@@ -74,49 +78,31 @@ Options:
   --feed, -f N          Paper feed after print in dots (default: 80)
 ```
 
-## Compatible paper
-
-The printer uses 56mm wide thermal sticker and label rolls (30mm label diameter). Compatible supplies include:
-
-- Standard white thermal paper (included with printer)
-- Crafts & Co clear glossy sticker rolls
-- Crafts & Co white sticker rolls
-- Crafts & Co coloured sticker rolls (pink, yellow, etc.)
-- Standard 56mm thermal sticker/label rolls
-
-The printer is "ink free": it uses heat to activate the thermal coating. Coloured papers just provide a coloured background under the black print.
-
-## How it works
-
-The printer communicates over BLE using a variant of the ESC/POS thermal printer protocol. The protocol was reverse-engineered from the decompiled Android APK and verified against hardware.
-
-### Connection & Protocol
-
-1. **Connect** to BLE service `ff00`, write to characteristic `ff02`, listen for notifications on `ff01`
-2. **Advertise name**: printer broadcasts as "C&Co 3128_BLE" (note: no service UUIDs in advertisement)
-3. **Enable printer**: send `10 FF F1 03` (Lujiang-specific command)
-4. **Wake up**: send 12 null bytes
-5. **Set density** (optional): `10 FF 10 00 [0|1|2]` for light/normal/dark
-6. **Send bitmap**: GS v 0 raster image (384 pixels wide, 1-bit, MSB-first)
-7. **Feed paper**: `1B 4A 50` (feed 80 dots)
-8. **Stop job**: `10 FF F1 45` (wait for response)
-
-For label/sticker paper with gap detection:
-- Replace step 7 with `1D 0C` (position to next label)
-- Use `1F 11 51` before print and `1F 11 50` after for position adjustment
-
-See [PROTOCOL.md](PROTOCOL.md) for complete command reference.
-
 ## Compatible printers
 
-This tool is confirmed to work with the Crafts & Co 3128 (DP-L1S). It will likely work with other printers from the LuckPrinter family that use the same SDK and `BaseNormalDevice` class; including various DP-/DP-series, LuckP-/LuckP-series, and MiniPocketPrinter models. The print width may differ (check with `print.py info`).
+Confirmed to work with the DP-L1S (sold as Crafts & Co 3128 and other rebrands). Will likely work with other printers in the LuckPrinter family that share the same SDK and `BaseNormalDevice` class — DP-/LuckP-/MiniPocketPrinter series and similar. Print width may differ; check with `python3 print.py info`.
 
-**Other printer classes use different enable/stop commands:**
-For the Fichero D11s and other AiYin-based label printers, see [fichero-printer](https://github.com/0xMH/fichero-printer) by 0xMH, who reverse-engineered the same SDK for a different device class.
+For Fichero D11s and other AiYin-based label printers (different device class, same SDK), see [fichero-printer](https://github.com/0xMH/fichero-printer) by 0xMH.
+
+## Compatible paper
+
+The printer uses 56mm wide thermal paper and sticker rolls (30mm label diameter). It's "ink free": heat activates the thermal coating, so coloured papers just provide a coloured background under the black print.
+
+## Coming soon
+
+I'm working on an expanded web version with:
+
+- Adjustable label sizes with presets (29×12mm, 40×12mm, 50×30mm, 40×30mm, 48mm round, and custom)
+- Save and load templates locally in the browser
+- Drag text directly on the preview for free positioning
+- Undo/redo
+- Print preview screen with adjustable threshold, copies, density override, and post-print feed in mm
+
+The basics in this repo are stable, so this version is being released first. The expanded version will get its own repo.
 
 ## Background
 
-This project started as a privacy-motivated reverse-engineering exercise. The "Luck Jingle" app requires location permissions, internet access, and various other permissions that have no business being on a Bluetooth printer. The protocol was reverse-engineered by decompiling the Android APK with JADX and reading the `PrinterImageProcessor` and `BaseNormalDevice` classes from the LuckPrinter SDK.
+This project started as a privacy exercise. The "Luck Jingle" app requires location permissions, internet access, and various other permissions that have no business being on a Bluetooth printer. The protocol was reverse-engineered by decompiling the Android APK with JADX and reading the `PrinterImageProcessor` and `BaseNormalDevice` classes from the LuckPrinter SDK, then verified against hardware.
 
 ## Licence
 
