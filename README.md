@@ -1,4 +1,4 @@
-# crafts-and-co-printer
+# crafts-and-co-thermal-pocket-printer-basic
 
 Print to the **Crafts & Co 3128** thermal pocket printer directly from your computer via Bluetooth, no app required.
 
