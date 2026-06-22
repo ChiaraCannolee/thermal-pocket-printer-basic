@@ -60,7 +60,7 @@ DEFAULT_FEED   = 80
 CHUNK_SIZE     = 512
 CHUNK_DELAY    = 0.01
 
-SCAN_KEYWORDS = ["C&CO", "3128", "L1S", "LUCK", "LJ", "DP-", "CRAFTS"]
+SCAN_KEYWORDS = ["C&CO", "3128", "L1S", "LUCK", "LJ", "DP-", "DP_", "CRAFTS"]
 
 
 # ── Notification handling ────────────────────────────────────────────
@@ -69,6 +69,11 @@ received_data = []
 
 def notification_handler(sender, data):
     received_data.append(data)
+
+
+def device_rssi(device):
+    """Return RSSI when available; Bleak 3 removed BLEDevice.rssi."""
+    return getattr(device, "rssi", None)
 
 
 def get_response_text():
@@ -159,7 +164,10 @@ def image_to_bitmap(img, width_px=DEFAULT_WIDTH):
     """
     width_bytes = (width_px + 7) // 8
     height_px = img.height
-    pixels = list(img.getdata())
+    if hasattr(img, "get_flattened_data"):
+        pixels = list(img.get_flattened_data())
+    else:
+        pixels = list(img.getdata())
 
     bitmap = bytearray(width_bytes * height_px)
 
@@ -313,9 +321,9 @@ async def find_printer(address=None, timeout=8.0):
             return d.address
 
     print("  Printer not found. Nearby BLE devices:")
-    for d in sorted(devices, key=lambda x: x.rssi or -999, reverse=True):
+    for d in sorted(devices, key=lambda x: device_rssi(x) or -999, reverse=True):
         if d.name:
-            print(f"    {d.name:30s}  {d.address}  RSSI={d.rssi}")
+            print(f"    {d.name:30s}  {d.address}  RSSI={device_rssi(d)}")
     print("\n  Use --address XX:XX:XX:XX:XX:XX to connect manually.")
     return None
 
@@ -329,7 +337,7 @@ async def cmd_scan(args):
 
     printers = []
     others = []
-    for d in sorted(devices, key=lambda x: x.rssi or -999, reverse=True):
+    for d in sorted(devices, key=lambda x: device_rssi(x) or -999, reverse=True):
         if not d.name:
             continue
         name_upper = d.name.upper()
@@ -339,14 +347,14 @@ async def cmd_scan(args):
     if printers:
         print("Printers found:")
         for d in printers:
-            print(f"  * {d.name:30s}  {d.address}  RSSI={d.rssi}")
+            print(f"  * {d.name:30s}  {d.address}  RSSI={device_rssi(d)}")
     else:
         print("No known printers found.")
 
     if others:
         print(f"\nOther BLE devices ({len(others)}):")
         for d in others[:15]:
-            print(f"    {d.name:30s}  {d.address}  RSSI={d.rssi}")
+            print(f"    {d.name:30s}  {d.address}  RSSI={device_rssi(d)}")
 
 
 async def cmd_info(args):
@@ -378,10 +386,11 @@ async def cmd_info(args):
                 raw = received_data[-1]
                 try:
                     text = raw.decode('ascii', errors='ignore').strip('\x00')
-                    if text and text.isprintable():
+                    if label == "Battery" and len(raw) >= 1:
+                        battery = raw[1] if len(raw) >= 2 else raw[0]
+                        print(f"  {label:12s}: {battery}%")
+                    elif text and text.isprintable():
                         print(f"  {label:12s}: {text}")
-                    elif label == "Battery" and len(raw) >= 2:
-                        print(f"  {label:12s}: {raw[1]}%")
                     elif label == "Status" and len(raw) >= 1:
                         status = raw[0]
                         flags = []
