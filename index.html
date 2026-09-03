@@ -613,12 +613,27 @@
         updateStatus('connecting');
         addLog('Scanning for printer...');
 
-        bleDevice = await navigator.bluetooth.requestDevice({
-          filters: [
-            { namePrefix: 'C&Co' },
-          ],
-          optionalServices: [0xff00],
-        });
+        try {
+          // Fast path: only offer devices that look like a known
+          // Crafts & Co / LuckPrinter printer.
+          bleDevice = await navigator.bluetooth.requestDevice({
+            filters: [
+              { namePrefix: 'C&Co' },
+            ],
+            optionalServices: [0xff00],
+          });
+        } catch (e) {
+          // No device matched that name. Rebrands of this printer (Action,
+          // Lidl/Silvercrest, and others) often broadcast under a different
+          // name, so fall back to showing every nearby Bluetooth device and
+          // let the user pick manually instead of giving up here.
+          if (e.name !== 'NotFoundError') throw e;
+          addLog("No printer matching the known name found, showing all nearby Bluetooth devices instead...");
+          bleDevice = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [0xff00],
+          });
+        }
 
         addLog('Found: ' + (bleDevice.name || 'unknown'));
 
