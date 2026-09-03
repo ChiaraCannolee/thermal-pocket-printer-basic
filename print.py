@@ -304,19 +304,24 @@ async def find_printer(address=None, timeout=8.0):
         return address
 
     print("  Scanning for printers...")
-    devices = await BleakScanner.discover(timeout=timeout)
+    # return_adv=True gives us (BLEDevice, AdvertisementData) pairs. RSSI
+    # lives on AdvertisementData as of Bleak 0.19+; BLEDevice.rssi was
+    # removed in Bleak 1.0.
+    found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    devices = [(d, adv) for d, adv in found.values()]
 
-    for d in devices:
+    for d, adv in devices:
         name = (d.name or "").upper()
         if any(kw in name for kw in SCAN_KEYWORDS):
             print(f"  Found: {d.name} ({d.address})")
             return d.address
 
     print("  Printer not found. Nearby BLE devices:")
-    for d in sorted(devices, key=lambda x: x.rssi or -999, reverse=True):
+    for d, adv in sorted(devices, key=lambda x: x[1].rssi or -999, reverse=True):
         if d.name:
-            print(f"    {d.name:30s}  {d.address}  RSSI={d.rssi}")
-    print("\n  Use --address XX:XX:XX:XX:XX:XX to connect manually.")
+            print(f"    {d.name:30s}  {d.address}  RSSI={adv.rssi}")
+    print("\n  If your printer is listed above under a different name, use")
+    print("  --address XX:XX:XX:XX:XX:XX to connect directly, skipping name matching.")
     return None
 
 
@@ -325,28 +330,31 @@ async def find_printer(address=None, timeout=8.0):
 async def cmd_scan(args):
     """Scan for nearby BLE devices."""
     print("Scanning for BLE devices...\n")
-    devices = await BleakScanner.discover(timeout=10.0)
+    found = await BleakScanner.discover(timeout=10.0, return_adv=True)
+    devices = [(d, adv) for d, adv in found.values()]
 
     printers = []
     others = []
-    for d in sorted(devices, key=lambda x: x.rssi or -999, reverse=True):
+    for d, adv in sorted(devices, key=lambda x: x[1].rssi or -999, reverse=True):
         if not d.name:
             continue
         name_upper = d.name.upper()
         is_printer = any(kw in name_upper for kw in SCAN_KEYWORDS)
-        (printers if is_printer else others).append(d)
+        (printers if is_printer else others).append((d, adv))
 
     if printers:
         print("Printers found:")
-        for d in printers:
-            print(f"  * {d.name:30s}  {d.address}  RSSI={d.rssi}")
+        for d, adv in printers:
+            print(f"  * {d.name:30s}  {d.address}  RSSI={adv.rssi}")
     else:
-        print("No known printers found.")
+        print("No known printers found. If yours is listed below under a")
+        print("different name, connect with --address XX:XX:XX:XX:XX:XX and")
+        print("it'll be treated as a printer directly, skipping name matching.")
 
     if others:
         print(f"\nOther BLE devices ({len(others)}):")
-        for d in others[:15]:
-            print(f"    {d.name:30s}  {d.address}  RSSI={d.rssi}")
+        for d, adv in others[:15]:
+            print(f"    {d.name:30s}  {d.address}  RSSI={adv.rssi}")
 
 
 async def cmd_info(args):
@@ -492,42 +500,65 @@ async def cmd_text(args):
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+def _add_shared_options(p, suppress_defaults=False):
+    """Add the options shared by every command (--address, --width, etc).
+
+    These are registered on both the top-level parser and every subparser,
+    so they work whether given before or after the command name, e.g. both
+    `print.py --address AA:BB:.. info` and `print.py info --address AA:BB:..`.
+
+    When registered on a subparser, defaults are suppressed (not set at
+    all) so that omitting the flag there doesn't stomp on a value already
+    supplied before the command name. See argparse.SUPPRESS docs: a
+    suppressed default means the attribute is only set if the user actually
+    passes the flag.
+    """
+    d = argparse.SUPPRESS if suppress_defaults else None
+    default_width = argparse.SUPPRESS if suppress_defaults else DEFAULT_WIDTH
+    default_feed = argparse.SUPPRESS if suppress_defaults else DEFAULT_FEED
+    default_copies = argparse.SUPPRESS if suppress_defaults else 1
+
+    p.add_argument('--address', '-a', default=d, help='Printer BLE address (skip scanning)')
+    p.add_argument('--width', '-w', type=int, default=default_width,
+                    help=f'Print width in pixels (default: {DEFAULT_WIDTH})')
+    p.add_argument('--density', '-d', type=int, choices=[0, 1, 2],
+                    default=d, help='Print density (0=light, 1=normal, 2=dark)')
+    p.add_argument('--feed', '-f', type=int, default=default_feed,
+                    help=f'Paper feed after print in dots (default: {DEFAULT_FEED})')
+    p.add_argument('--dither', action='store_true', default=d,
+                    help='Use Floyd-Steinberg dithering')
+    p.add_argument('--invert', action='store_true', default=d,
+                    help='Invert colours')
+    p.add_argument('--label', action='store_true', default=d,
+                    help='Label/sticker mode (gap detection)')
+    p.add_argument('--copies', '-c', type=int, default=default_copies,
+                    help='Number of copies (default: 1)')
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Print to Crafts & Co 3128 thermal printer via BLE",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
-
-    parser.add_argument('--address', '-a', help='Printer BLE address (skip scanning)')
-    parser.add_argument('--width', '-w', type=int, default=DEFAULT_WIDTH,
-                        help=f'Print width in pixels (default: {DEFAULT_WIDTH})')
-    parser.add_argument('--density', '-d', type=int, choices=[0, 1, 2],
-                        default=None, help='Print density (0=light, 1=normal, 2=dark)')
-    parser.add_argument('--feed', '-f', type=int, default=DEFAULT_FEED,
-                        help=f'Paper feed after print in dots (default: {DEFAULT_FEED})')
-    parser.add_argument('--dither', action='store_true',
-                        help='Use Floyd-Steinberg dithering')
-    parser.add_argument('--invert', action='store_true',
-                        help='Invert colours')
-    parser.add_argument('--label', action='store_true',
-                        help='Label/sticker mode (gap detection)')
-    parser.add_argument('--copies', '-c', type=int, default=1,
-                        help='Number of copies (default: 1)')
+    _add_shared_options(parser)
 
     subparsers = parser.add_subparsers(dest='command', help='Command')
 
-    subparsers.add_parser('scan', help='Scan for BLE printers')
-    subparsers.add_parser('info', help='Show printer info')
-    subparsers.add_parser('test', help='Print test pattern')
+    for name, help_text in [('scan', 'Scan for BLE printers'),
+                             ('info', 'Show printer info'),
+                             ('test', 'Print test pattern')]:
+        _add_shared_options(subparsers.add_parser(name, help=help_text), suppress_defaults=True)
 
     img_parser = subparsers.add_parser('image', help='Print an image')
     img_parser.add_argument('file', help='Image file to print (PNG, JPG, etc.)')
+    _add_shared_options(img_parser, suppress_defaults=True)
 
     txt_parser = subparsers.add_parser('text', help='Print text')
     txt_parser.add_argument('text', help='Text to print')
     txt_parser.add_argument('--font-size', type=int, default=48,
                             help='Font size in pixels (default: 48)')
+    _add_shared_options(txt_parser, suppress_defaults=True)
 
     args = parser.parse_args()
 
