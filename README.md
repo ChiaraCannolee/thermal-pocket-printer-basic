@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/31813430/README.md)
 # thermal-pocket-printer-basic
 
 Print to a **DP-L1S** thermal pocket printer directly from your computer over Bluetooth, no app required.
