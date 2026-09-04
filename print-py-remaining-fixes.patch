@@ -1,0 +1,75 @@
+diff --git a/print.py b/print.py
+index 28d2fa8..a4f4ab8 100644
+--- a/print.py
++++ b/print.py
+@@ -152,6 +152,19 @@ def prepare_image(source, width_px=DEFAULT_WIDTH, dither=False, invert=False):
+     return img
+ 
+ 
++def _pixel_data(img):
++    """Get flat pixel values from a grayscale image, across Pillow versions.
++
++    Image.getdata() is deprecated as of Pillow 12 in favour of
++    get_flattened_data() and is slated for removal in Pillow 14
++    (2027-10-15). Use the new method where it exists, fall back to the old
++    one on older Pillow installs that don't have it yet.
++    """
++    if hasattr(img, 'get_flattened_data'):
++        return img.get_flattened_data()
++    return list(img.getdata())
++
++
+ def image_to_bitmap(img, width_px=DEFAULT_WIDTH):
+     """
+     Convert a grayscale PIL Image to 1-bit bitmap bytes.
+@@ -159,7 +172,7 @@ def image_to_bitmap(img, width_px=DEFAULT_WIDTH):
+     """
+     width_bytes = (width_px + 7) // 8
+     height_px = img.height
+-    pixels = list(img.getdata())
++    pixels = _pixel_data(img)
+ 
+     bitmap = bytearray(width_bytes * height_px)
+ 
+@@ -280,15 +293,38 @@ def build_gs_v_0(bitmap_data, width_bytes, height_px, mode=0):
+ # ── BLE communication ─────────────────────────────────────────────────
+ 
+ async def ble_send_chunked(client, data, label="data"):
+-    """Send data in BLE-sized chunks."""
++    """Send data in BLE-sized chunks.
++
++    CHUNK_SIZE (512) is an upper bound, not a guarantee: it only works if
++    the connection actually negotiated a large enough ATT MTU. Writing more
++    than that in one write-without-response call makes BlueZ reject it
++    outright with "org.bluez.Error.Failed: Failed to initiate write" rather
++    than trimming it, so we cap to what the characteristic actually reports
++    it can take.
++    """
++    chunk_size = CHUNK_SIZE
++    char = client.services.get_characteristic(WRITE_CHAR_UUID)
++    if char is not None:
++        # BlueZ reports the ATT minimum (20 bytes) until MTU negotiation
++        # with the printer finishes, which can take a moment after connect,
++        # and on BlueZ < 5.62 it never reports anything else. Give it a
++        # little time to settle on a bigger value; if it doesn't, we just
++        # chunk smaller instead of sending an oversized write.
++        for _ in range(20):
++            if char.max_write_without_response_size > 20:
++                break
++            await asyncio.sleep(0.1)
++        chunk_size = min(CHUNK_SIZE, char.max_write_without_response_size)
++
+     total = len(data)
+     sent = 0
+     while sent < total:
+-        chunk = data[sent:sent + CHUNK_SIZE]
++        chunk = data[sent:sent + chunk_size]
+         await client.write_gatt_char(WRITE_CHAR_UUID, chunk, response=False)
+         sent += len(chunk)
+         await asyncio.sleep(CHUNK_DELAY)
+-    print(f"  Sent {label}: {total:,} bytes ({(total + CHUNK_SIZE - 1) // CHUNK_SIZE} chunks)")
++    chunks = (total + chunk_size - 1) // chunk_size
++    print(f"  Sent {label}: {total:,} bytes ({chunks} chunks, {chunk_size}B each)")
+ 
+ 
+ async def ble_command(client, cmd_bytes, label="cmd", wait=0.3):
