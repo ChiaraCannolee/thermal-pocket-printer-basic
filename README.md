@@ -49,7 +49,7 @@ The printer runs on the LuckPrinter SDK, which is used by 159+ printer models. T
 
 For label/sticker paper with gap detection, replace step 6 with `1D 0C` (position to next label), and use `1F 11 51` before print and `1F 11 50` after for position adjustment.
 
-The web version uses 100-byte chunks with 50ms delays because of Web Bluetooth's MTU limits. The Python CLI uses 512-byte chunks with 10ms delays, which is significantly faster.
+The web version uses 100-byte chunks with 50ms delays because of Web Bluetooth's MTU limits. The Python CLI uses up to 512-byte chunks with 10ms delays (smaller if the negotiated BLE MTU doesn't allow that much), which is still significantly faster than the web version's fixed 100-byte chunks.
 
 The printer broadcasts as `C&Co 3128_BLE` and does not advertise its service UUIDs, so scanning by service filter alone won't find it.
 
