@@ -16,7 +16,7 @@ Web Bluetooth is required, so Firefox and Safari are out. Works on macOS and Lin
 **Python CLI (for automation and batch jobs):**
 
 ```bash
-pip install bleak Pillow
+pip install "bleak>=0.19" Pillow
 
 python3 print.py test                         # test pattern
 python3 print.py image photo.png --dither     # photo with Floyd-Steinberg
